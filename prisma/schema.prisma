@@ -1,0 +1,287 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  RHA_ADMIN
+  CORPORATE_ADMIN
+  CORPORATE_EMPLOYEE
+  HOTEL_OPERATOR
+}
+
+enum CardType {
+  PER_DIEM
+  CORPORATE_EXPENSE
+}
+
+enum CardStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum CardValidityType {
+  SINGLE
+  RANGE
+}
+
+enum TransactionStatus {
+  PENDING
+  SETTLED
+  DISPUTED
+  FAILED
+}
+
+enum DisputeStatus {
+  OPEN
+  APPROVED
+  REJECTED
+}
+
+enum RedeemStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PAYMENT
+  APPROVE
+  REJECT
+  DISPUTE
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  domain    String?
+  logoUrl   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users            User[]
+  serviceProviders ServiceProvider[]
+}
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  phone          String?
+  role           UserRole
+  isActive       Boolean  @default(true)
+  tenantId       String?
+  tenant         Tenant?  @relation(fields: [tenantId], references: [id])
+  department     String?
+  cardPassword   String?
+  serviceProviderId String?
+  serviceProvider   ServiceProvider? @relation(fields: [serviceProviderId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  assignedCards  CardEmployee[]
+  ledCards       Card[]          @relation("CardTeamLeader")
+  transactions   Transaction[]
+  disputes       Dispute[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+}
+
+model ServiceProvider {
+  id          String   @id @default(uuid())
+  name        String
+  category    String?
+  description String?
+  code        String   @unique
+  phone       String?
+  email       String?
+  latitude    Float?
+  longitude   Float?
+  address     String?
+  rating      Float?
+  isActive    Boolean  @default(true)
+  tenantId    String?
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  transactions Transaction[]
+  operators    User[]
+}
+
+model Card {
+  id            String          @id @default(uuid())
+  type          CardType
+  status        CardStatus      @default(ACTIVE)
+  cardPassword  String
+  cardNumber    String          @unique
+  last4         String
+  limit         Float?
+  amount        Float?
+  spent         Float           @default(0)
+  validityType  CardValidityType
+  validFrom     DateTime?
+  validUntil    DateTime?
+  purpose       String?
+  distributed   Boolean         @default(false)
+  teamLeaderId  String?
+  teamLeader    User?           @relation("CardTeamLeader", fields: [teamLeaderId], references: [id])
+  tenantId      String?
+  createdById   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  employees     CardEmployee[]
+  transactions  Transaction[]
+  budgetId      String?
+  budget        Budget?         @relation(fields: [budgetId], references: [id])
+}
+
+model CardEmployee {
+  cardId     String
+  employeeId String
+  card       Card   @relation(fields: [cardId], references: [id])
+  employee   User   @relation(fields: [employeeId], references: [id])
+
+  @@id([cardId, employeeId])
+}
+
+model Budget {
+  id             String   @id @default(uuid())
+  name           String
+  allocationType String
+  purpose        String?
+  allocated      Float
+  spent          Float    @default(0)
+  ceiling        Float
+  status         String   @default("Active")
+  tenantId       String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  cards        Card[]
+  budgetUsages BudgetUsage[]
+}
+
+model BudgetUsage {
+  id          String @id @default(uuid())
+  description String
+  amount      Float
+  date        DateTime @default(now())
+  budgetId    String
+  budget      Budget @relation(fields: [budgetId], references: [id])
+}
+
+model Transaction {
+  id                String            @id @default(uuid())
+  title             String
+  amount            Float
+  status            TransactionStatus @default(PENDING)
+  reference         String            @unique
+  paymentMethod     String?
+  details           String?
+  clientName        String?
+  clientOrg         String?
+  cardId            String?
+  card              Card?             @relation(fields: [cardId], references: [id])
+  userId            String?
+  user              User?             @relation(fields: [userId], references: [id])
+  serviceProviderId String?
+  serviceProvider   ServiceProvider?  @relation(fields: [serviceProviderId], references: [id])
+  tenantId          String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+}
+
+model Dispute {
+  id            String        @id @default(uuid())
+  title         String
+  description   String?
+  amount        Float
+  status        DisputeStatus @default(OPEN)
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  transactionId String?
+  resolvedAt    DateTime?
+  resolvedById  String?
+  tenantId      String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Redeem {
+  id                 String       @id @default(uuid())
+  title              String
+  schedule           String
+  status             RedeemStatus @default(PENDING)
+  description        String?
+  requestedBy        String
+  paymentMethod      String?
+  externalReference  String?
+  nextRun            DateTime?
+  tenantId           String?
+  hotelOperatorId    String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  redeemTransactions RedeemTransaction[]
+}
+
+model RedeemTransaction {
+  id        String  @id @default(uuid())
+  amount    Float
+  guest     String
+  property  String
+  reference String
+  status    String  @default("Pending")
+  redeemId  String
+  redeem    Redeem  @relation(fields: [redeemId], references: [id])
+
+  @@index([redeemId])
+}
+
+model Notification {
+  id            String   @id @default(uuid())
+  title         String
+  subtitle      String?
+  message       String?
+  type          String
+  actionLabel   String?
+  actionUrl     String?
+  transactionId String?
+  isRead        Boolean  @default(false)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  createdAt     DateTime @default(now())
+}
+
+model AuditLog {
+  id          String      @id @default(uuid())
+  action      AuditAction
+  entity      String
+  entityId    String?
+  description String?
+  oldValue    Json?
+  newValue    Json?
+  userId      String?
+  user        User?       @relation(fields: [userId], references: [id])
+  tenantId    String?
+  ipAddress   String?
+  createdAt   DateTime    @default(now())
+}
