@@ -33,6 +33,18 @@ export class PaymentsService {
       userId,
     );
 
+    if (card.budgetId) {
+      const budget = await this.prisma.budget.findUnique({ where: { id: card.budgetId } });
+      if (budget && budget.spent + dto.amount > budget.ceiling) {
+        throw new ForbiddenException("Payment would exceed the linked budget ceiling");
+      }
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+
     const reference = `PAY-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const transaction = await this.prisma.transaction.create({
@@ -43,7 +55,7 @@ export class PaymentsService {
         reference,
         paymentMethod: "Corporate card",
         details: `Payment via ${card.type} card ${card.last4}`,
-        clientName: `${card.teamLeader?.firstName || ""} ${card.teamLeader?.lastName || ""}`.trim() || "Employee",
+        clientName: user ? `${user.firstName} ${user.lastName}`.trim() : "Employee",
         clientOrg: tenantId || "",
         cardId: card.id,
         userId,
@@ -56,6 +68,20 @@ export class PaymentsService {
       where: { id: card.id },
       data: { spent: { increment: dto.amount } },
     });
+
+    if (card.budgetId) {
+      await this.prisma.budget.update({
+        where: { id: card.budgetId },
+        data: { spent: { increment: dto.amount } },
+      });
+      await this.prisma.budgetUsage.create({
+        data: {
+          description: `Payment to ${provider.name}`,
+          amount: dto.amount,
+          budgetId: card.budgetId,
+        },
+      });
+    }
 
     await this.auditService.log({
       action: AuditAction.PAYMENT,

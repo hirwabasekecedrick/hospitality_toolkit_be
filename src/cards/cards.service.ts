@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, ForbiddenException, UnauthorizedException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException, UnauthorizedException, BadRequestException } from "@nestjs/common";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { CreateCardDto } from "./dto/create-card.dto";
 import { UpdateCardDto } from "./dto/update-card.dto";
-import { AuditAction, CardType, UserRole } from "@prisma/client";
+import { ChangeCardPasswordDto } from "./dto/change-card-password.dto";
+import { AuditAction, CardType } from "@prisma/client";
 
 @Injectable()
 export class CardsService {
@@ -19,9 +20,14 @@ export class CardsService {
     return { cardNumber, last4 };
   }
 
+  private generateDefaultPassword(): string {
+    return Math.floor(1000 + Math.random() * 9000).toString();
+  }
+
   async create(dto: CreateCardDto, createdById: string, tenantId: string) {
     const { cardNumber, last4 } = this.generateCardNumber();
-    const cardPassword = await bcrypt.hash(dto.cardPassword, 10);
+    const plainPassword = dto.cardPassword || this.generateDefaultPassword();
+    const cardPassword = await bcrypt.hash(plainPassword, 10);
 
     const card = await this.prisma.card.create({
       data: {
@@ -56,7 +62,7 @@ export class CardsService {
           data: {
             title: "New card issued",
             subtitle: `A new ${dto.type} card has been assigned to you.`,
-            message: `A ${dto.type === "PER_DIEM" ? "per diem" : "corporate expense"} card has been issued and assigned to you. Purpose: ${dto.purpose || "N/A"}.`,
+            message: `A ${dto.type === "PER_DIEM" ? "per diem" : "corporate expense"} card ****${last4} has been issued. Default password: ${plainPassword}. Please change it before first use.`,
             type: "Card",
             actionLabel: "View cards",
             actionUrl: "/corporate_employee",
@@ -70,8 +76,8 @@ export class CardsService {
       await this.prisma.notification.create({
         data: {
           title: "Card issued to your team",
-          subtitle: `A ${dto.type} card has been issued.`,
-          message: `A ${dto.type === "PER_DIEM" ? "per diem" : "corporate expense"} card has been issued for your team. Purpose: ${dto.purpose || "N/A"}.`,
+          subtitle: `A ${dto.type} card ****${last4} has been issued.`,
+          message: `A ${dto.type === "PER_DIEM" ? "per diem" : "corporate expense"} card ****${last4} has been issued for your team. Purpose: ${dto.purpose || "N/A"}.`,
           type: "Card",
           actionLabel: "View cards",
           actionUrl: "/corporate_employee",
@@ -89,7 +95,8 @@ export class CardsService {
       tenantId,
     });
 
-    return this.findOne(card.id, tenantId, "CORPORATE_ADMIN");
+    const result = await this.findOne(card.id, tenantId, "CORPORATE_ADMIN");
+    return { ...result, defaultPassword: plainPassword };
   }
 
   async findAll(tenantId: string) {
@@ -168,24 +175,47 @@ export class CardsService {
     return { message: "Card cancelled successfully" };
   }
 
+  async changePassword(userId: string, dto: ChangeCardPasswordDto) {
+    const card = await this.prisma.card.findUnique({
+      where: { id: dto.cardId },
+      include: { employees: true },
+    });
+
+    if (!card) throw new NotFoundException("Card not found");
+
+    const isAssigned = card.employees.some((e) => e.employeeId === userId);
+    const isTeamLeader = card.teamLeaderId === userId;
+    if (!isAssigned && !isTeamLeader) {
+      throw new ForbiddenException("You are not assigned to this card");
+    }
+
+    const isOldPasswordValid = await bcrypt.compare(dto.oldPassword, card.cardPassword);
+    if (!isOldPasswordValid) throw new BadRequestException("Current card password is incorrect");
+
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, 10);
+    await this.prisma.card.update({
+      where: { id: dto.cardId },
+      data: { cardPassword: newPasswordHash },
+    });
+
+    return { message: "Card password changed successfully" };
+  }
+
   async validateCardForPayment(cardId: string, password: string, amount: number, userId: string) {
     const card = await this.prisma.card.findUnique({
       where: { id: cardId },
       include: {
         employees: true,
-        teamLeader: true,
+        teamLeader: { select: { id: true, firstName: true, lastName: true } },
       },
     });
 
     if (!card) throw new NotFoundException("Card not found");
     if (card.status !== "ACTIVE") throw new ForbiddenException("Card is not active");
-    // Note: expiry check relaxed for presentation — seeded cards may have past dates
-    // if (card.validUntil && new Date(card.validUntil) < new Date()) throw new ForbiddenException("Card has expired");
-    // if (card.validFrom && new Date(card.validFrom) > new Date()) throw new ForbiddenException("Card is not yet valid");
+
     if (card.limit && card.spent + amount > card.limit) throw new ForbiddenException("Card limit exceeded");
 
     if (card.type === CardType.CORPORATE_EXPENSE) {
-      // Allow team leader, assigned employees, or any user in the same tenant
       const isTeamLeader = card.teamLeaderId === userId;
       const isAssigned = card.employees.some((e) => e.employeeId === userId);
       if (!isTeamLeader && !isAssigned) {

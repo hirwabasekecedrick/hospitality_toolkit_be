@@ -11,7 +11,8 @@ import { DisputesModule } from "./disputes/disputes.module";
 import { RedeemsModule } from "./redeems/redeems.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { AuditModule } from "./audit/audit.module";
-import { RedisModule } from "./redis/redis.module";
+import { ReportsModule } from "./reports/reports.module";
+import { TokenBlacklistModule } from "./token-blacklist/token-blacklist.module";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { ResponseInterceptor } from "./common/interceptors/response.interceptor";
@@ -36,7 +37,8 @@ import { RolesGuard } from "./auth/guards/roles.guard";
     RedeemsModule,
     NotificationsModule,
     AuditModule,
-    RedisModule,
+    ReportsModule,
+    TokenBlacklistModule,
   ],
   providers: [
     {

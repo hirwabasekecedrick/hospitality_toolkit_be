@@ -3,7 +3,7 @@ import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { Request } from "express";
 import { PrismaService } from "../../prisma/prisma.service";
-import { RedisService } from "../../redis/redis.service";
+import { TokenBlacklistService } from "../../token-blacklist/token-blacklist.service";
 
 interface JwtPayload {
   sub: string;
@@ -17,7 +17,7 @@ interface JwtPayload {
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private prisma: PrismaService,
-    private redis: RedisService,
+    private tokenBlacklist: TokenBlacklistService,
   ) {
     const secret = process.env.JWT_SECRET;
     if (!secret) {
@@ -62,7 +62,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     if (payload.jti) {
-      const blacklisted = await this.redis.isTokenBlacklisted(payload.jti);
+      const blacklisted = await this.tokenBlacklist.isTokenBlacklisted(payload.jti);
       if (blacklisted) {
         throw new UnauthorizedException("Token has been revoked");
       }

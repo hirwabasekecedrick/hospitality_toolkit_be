@@ -4,7 +4,7 @@ import * as bcrypt from "bcrypt";
 import { v4 as uuidv4 } from "uuid";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
-import { RedisService } from "../redis/redis.service";
+import { TokenBlacklistService } from "../token-blacklist/token-blacklist.service";
 import { AuditAction, UserRole } from "@prisma/client";
 import { RegisterDto } from "./dto/register.dto";
 
@@ -35,7 +35,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private auditService: AuditService,
-    private redis: RedisService,
+    private tokenBlacklist: TokenBlacklistService,
   ) {}
 
   async register(dto: RegisterDto, ipAddress?: string) {
@@ -133,7 +133,7 @@ export class AuthService {
   async logout(jti: string | undefined) {
     if (jti) {
       const ttl = jwtExpirySeconds();
-      await this.redis.blacklistToken(jti, ttl);
+      await this.tokenBlacklist.blacklistToken(jti, ttl);
     }
     return { message: "Logged out successfully" };
   }

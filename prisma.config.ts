@@ -6,6 +6,6 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: "postgresql://postgres:Jh!111cg@localhost:5432/convenience_card",
+    url: "postgresql://postgres:123@localhost:5432/convenience_card",
   },
 });
