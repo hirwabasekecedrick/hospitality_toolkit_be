@@ -106,6 +106,42 @@ export class PaymentsService {
       },
     });
 
+    const corporateAdmins = await this.prisma.user.findMany({
+      where: { tenantId, role: "CORPORATE_ADMIN" },
+    });
+    for (const admin of corporateAdmins) {
+      await this.prisma.notification.create({
+        data: {
+          title: "New payment by employee",
+          subtitle: `${user?.firstName ?? "Employee"} ${user?.lastName ?? ""} — ${provider.name}`,
+          message: `${user?.firstName ?? "An employee"} made a payment of RWF ${dto.amount.toLocaleString()} to ${provider.name} using card ${card.last4}.`,
+          type: "Payment",
+          actionLabel: "View transaction",
+          actionUrl: `/corporate_admin/payments/${transaction.id}`,
+          transactionId: transaction.id,
+          userId: admin.id,
+        },
+      });
+    }
+
+    const hotelOperators = await this.prisma.user.findMany({
+      where: { serviceProviderId: provider.id, role: "HOTEL_OPERATOR" },
+    });
+    for (const operator of hotelOperators) {
+      await this.prisma.notification.create({
+        data: {
+          title: "Payment received",
+          subtitle: `${user?.firstName ?? "Guest"} ${user?.lastName ?? ""} — ${transaction.reference}`,
+          message: `A payment of RWF ${dto.amount.toLocaleString()} from ${user?.firstName ?? "a guest"} has been received at ${provider.name}. Reference: ${transaction.reference}.`,
+          type: "Payment",
+          actionLabel: "View transaction",
+          actionUrl: `/hotel_operator/payments/${transaction.id}`,
+          transactionId: transaction.id,
+          userId: operator.id,
+        },
+      });
+    }
+
     return { transaction, provider };
   }
 
