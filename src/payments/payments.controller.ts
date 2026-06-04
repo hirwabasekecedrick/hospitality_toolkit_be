@@ -25,7 +25,7 @@ export class PaymentsController {
   @Get()
   @Roles(UserRole.CORPORATE_EMPLOYEE, UserRole.CORPORATE_ADMIN)
   async getUserTransactions(@CurrentUser() user: any) {
-    return this.paymentsService.getUserTransactions(user.id, user.tenantId);
+    return this.paymentsService.getUserTransactions(user.id, user.tenantId, user.role);
   }
 
   @Get("provider")

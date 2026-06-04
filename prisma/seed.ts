@@ -210,6 +210,35 @@ async function main() {
     create: { cardId: cardPerDiem.id, employeeId: employee1.id },
   });
 
+  // Give the corporate admin a personal PER_DIEM card
+  const cardAdminPersonal = await prisma.card.upsert({
+    where: { id: "seed-card-admin-001" },
+    update: {},
+    create: {
+      id: "seed-card-admin-001",
+      type: "PER_DIEM",
+      status: "ACTIVE",
+      cardNumber: "4111111111119999",
+      last4: "9999",
+      amount: 300000,
+      spent: 0,
+      validityType: "RANGE",
+      validFrom: new Date("2025-01-01"),
+      validUntil: new Date("2025-12-31"),
+      purpose: "Admin personal card",
+      distributed: false,
+      cardPassword: await bcrypt.hash("admincard123", 10),
+      tenantId: bankTenant.id,
+      createdById: corporateAdmin.id,
+    },
+  });
+
+  await prisma.cardEmployee.upsert({
+    where: { cardId_employeeId: { cardId: cardAdminPersonal.id, employeeId: corporateAdmin.id } },
+    update: {},
+    create: { cardId: cardAdminPersonal.id, employeeId: corporateAdmin.id },
+  });
+
   // Create a CORPORATE_EXPENSE card for the team
   const cardCorpExpense = await prisma.card.upsert({
     where: { id: "seed-card-ce-001" },

@@ -64,9 +64,21 @@ export class PaymentsService {
       },
     });
 
+    // Update card balances: increment spent and if the card uses `amount` as remaining balance, decrement it.
+    const cardUpdateData: any = { spent: { increment: dto.amount } };
+    if (typeof card.amount !== "undefined" && card.amount !== null) {
+      cardUpdateData.amount = { decrement: dto.amount };
+    }
+
     await this.prisma.card.update({
       where: { id: card.id },
-      data: { spent: { increment: dto.amount } },
+      data: cardUpdateData,
+    });
+
+    // Update transaction status to CONFIRMED after successful payment
+    await this.prisma.transaction.update({
+      where: { id: transaction.id },
+      data: { status: TransactionStatus.CONFIRMED },
     });
 
     if (card.budgetId) {
@@ -152,15 +164,30 @@ export class PaymentsService {
     } else {
       where.status = TransactionStatus.PENDING;
     }
-    return this.prisma.transaction.findMany({
+    const txns = await this.prisma.transaction.findMany({
       where,
       include: {
-        user: { select: { id: true, firstName: true, lastName: true, email: true } },
-        card: { select: { id: true, last4: true, type: true } },
-        serviceProvider: true,
+        user: { select: { id: true, firstName: true, lastName: true } },
+        card: { select: { id: true, last4: true, type: true, spent: true, amount: true } },
+        serviceProvider: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },
     });
+
+    // Map to compact shape expected by frontend: include employee name and hotel name only
+    return txns.map((t) => ({
+      id: t.id,
+      title: t.title,
+      amount: t.amount,
+      status: t.status,
+      reference: t.reference,
+      paymentMethod: t.paymentMethod,
+      details: t.details,
+      employeeName: t.user ? `${t.user.firstName} ${t.user.lastName}`.trim() : "",
+      hotelName: t.serviceProvider ? t.serviceProvider.name : "",
+      createdAt: t.createdAt,
+      card: t.card ? { id: t.card.id, last4: t.card.last4, type: t.card.type, spent: t.card.spent, amount: t.card.amount } : undefined,
+    }));
   }
 
   async redeemBatch(dto: { transactionIds: string[] }, userId: string, serviceProviderId: string, tenantId?: string) {
@@ -232,12 +259,47 @@ export class PaymentsService {
     return redeem;
   }
 
-  async getUserTransactions(userId: string, tenantId: string) {
-    return this.prisma.transaction.findMany({
-      where: { OR: [{ userId }, { tenantId }] },
-      include: { serviceProvider: true, card: true },
-      orderBy: { createdAt: "desc" },
-    });
+  async getUserTransactions(userId: string, tenantId: string, role?: string) {
+    // Return transactions according to requesting user's role:
+    // - CORPORATE_EMPLOYEE: only transactions created by the user
+    // - CORPORATE_ADMIN: all transactions for the tenant
+    // - otherwise: default to user-only
+    let txns;
+    if (role === "CORPORATE_ADMIN") {
+      txns = await this.prisma.transaction.findMany({
+        where: { tenantId },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true } },
+          serviceProvider: { select: { id: true, name: true } },
+          card: { select: { id: true, last4: true, type: true, spent: true, amount: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    } else {
+      txns = await this.prisma.transaction.findMany({
+        where: { userId },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true } },
+          serviceProvider: { select: { id: true, name: true } },
+          card: { select: { id: true, last4: true, type: true, spent: true, amount: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    }
+
+    return txns.map((t) => ({
+      id: t.id,
+      title: t.title,
+      amount: t.amount,
+      status: t.status,
+      reference: t.reference,
+      paymentMethod: t.paymentMethod,
+      details: t.details,
+      employeeName: t.user ? `${t.user.firstName} ${t.user.lastName}`.trim() : "",
+      hotelName: t.serviceProvider ? t.serviceProvider.name : "",
+      createdAt: t.createdAt,
+      card: t.card ? { id: t.card.id, last4: t.card.last4, type: t.card.type, spent: t.card.spent, amount: t.card.amount } : undefined,
+    }));
   }
 
   async getTransactionById(id: string, requestingUser?: { id: string; role: string; tenantId?: string; serviceProviderId?: string }) {
