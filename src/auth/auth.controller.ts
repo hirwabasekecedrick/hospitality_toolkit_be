@@ -8,18 +8,18 @@ import { Public } from "./decorators/public.decorator";
 import { CurrentUser } from "./decorators/current-user.decorator";
 
 function setAuthCookies(res: Response, accessToken: string, csrfToken: string) {
-  const isProd = process.env.NODE_ENV === "production" ||;
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie("access_token", accessToken, {
     httpOnly: true,
     secure: isProd,
-    sameSite: "strict",
+    sameSite: isProd ? "none" : "lax",
     path: "/",
     maxAge: 7 * 86400 * 1000,
   });
   res.cookie("csrf_token", csrfToken, {
     httpOnly: false,
     secure: isProd,
-    sameSite: "strict",
+    sameSite: isProd ? "none" : "lax",
     path: "/",
     maxAge: 7 * 86400 * 1000,
   });
