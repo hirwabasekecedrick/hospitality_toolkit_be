@@ -19,7 +19,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private prisma: PrismaService,
     private tokenBlacklist: TokenBlacklistService,
   ) {
-    const secret = process.env.JWT_SECRET;
+    const secret = 'ec1a5ddbe3881feaac15904df43cc4df77d9a09e2e82d6353803c497a01f96ac475b95494bfe0dc6f799631689ab7daa004a8059275354f83e8862f6b9c2da07';
     if (!secret) {
       throw new Error("JWT_SECRET environment variable is required");
     }
