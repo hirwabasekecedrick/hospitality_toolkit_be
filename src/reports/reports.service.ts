@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { Prisma } from "@prisma/client";
 
 @Injectable()
 export class ReportsService {
@@ -21,7 +22,7 @@ export class ReportsService {
       totalCards,
       activeCards,
       totalTransactions,
-      totalSpent: totalSpent._sum.amount || 0,
+      totalSpent: totalSpent._sum.amount?.toNumber() || 0,
       completedRedeems,
     };
   }
@@ -41,10 +42,10 @@ export class ReportsService {
       type: c.type,
       status: c.status,
       limit: c.limit,
-      amount: c.amount,
-      spent: c.spent,
-      remaining: c.limit ? c.limit - c.spent : null,
-      usagePercent: c.limit ? Math.round((c.spent / c.limit) * 100) : 0,
+      amount: c.amount ? c.amount.toNumber() : null,
+      spent: c.spent.toNumber(),
+      remaining: c.limit ? c.limit.minus(c.spent).toNumber() : null,
+      usagePercent: c.limit ? Math.round((c.spent.toNumber() / c.limit.toNumber()) * 100) : 0,
       purpose: c.purpose,
       cardholder: c.teamLeader
         ? `${c.teamLeader.firstName} ${c.teamLeader.lastName}`
@@ -67,7 +68,7 @@ export class ReportsService {
       name: p.name,
       code: p.code,
       totalTransactions: p.transactions.length,
-      totalRevenue: p.transactions.reduce((sum, t) => sum + t.amount, 0),
+      totalRevenue: p.transactions.reduce((sum, t) => sum + t.amount.toNumber(), 0),
     }));
   }
 
@@ -81,11 +82,11 @@ export class ReportsService {
       id: b.id,
       name: b.name,
       allocationType: b.allocationType,
-      allocated: b.allocated,
-      spent: b.spent,
-      ceiling: b.ceiling,
-      remaining: b.ceiling - b.spent,
-      usagePercent: b.ceiling > 0 ? Math.round((b.spent / b.ceiling) * 100) : 0,
+      allocated: b.allocated.toNumber(),
+      spent: b.spent.toNumber(),
+      ceiling: b.ceiling.toNumber(),
+      remaining: b.ceiling.minus(b.spent).toNumber(),
+      usagePercent: b.ceiling.toNumber() > 0 ? Math.round((b.spent.toNumber() / b.ceiling.toNumber()) * 100) : 0,
       usageCount: b.budgetUsages.length,
     }));
   }
@@ -105,7 +106,7 @@ export class ReportsService {
       name: `${u.firstName} ${u.lastName}`,
       email: u.email,
       department: u.department,
-      totalSpent: u.transactions.reduce((sum, t) => sum + t.amount, 0),
+      totalSpent: u.transactions.reduce((sum, t) => sum + t.amount.toNumber(), 0),
       transactionCount: u.transactions.length,
       pendingCount: u.transactions.filter((t) => t.status === "PENDING").length,
     }));
@@ -118,7 +119,7 @@ export class ReportsService {
       orderBy: { createdAt: "desc" },
     });
 
-    const totalSpent = transactions.reduce((sum, t) => sum + t.amount, 0);
+    const totalSpent = transactions.reduce((sum, t) => sum + t.amount.toNumber(), 0);
 
     return {
       totalTransactions: transactions.length,
@@ -150,7 +151,7 @@ export class ReportsService {
     return {
       pendingCount,
       settledCount,
-      totalRevenue: totalRevenue._sum.amount || 0,
+      totalRevenue: totalRevenue._sum.amount?.toNumber() || 0,
       recentTransactions,
     };
   }

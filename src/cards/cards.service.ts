@@ -213,8 +213,8 @@ export class CardsService {
     if (!card) throw new NotFoundException("Card not found");
     if (card.status !== "ACTIVE") throw new ForbiddenException("Card is not active");
 
-    if (card.limit && card.spent + amount > card.limit) throw new ForbiddenException("Card limit exceeded");
-    if (card.amount !== null && card.amount !== undefined && card.amount < amount) throw new ForbiddenException("Insufficient card balance");
+    if (card.limit && card.spent.plus(amount).greaterThan(card.limit)) throw new ForbiddenException("Card limit exceeded");
+    if (card.amount !== null && card.amount !== undefined && card.amount.lessThan(amount)) throw new ForbiddenException("Insufficient card balance");
 
     if (card.type === CardType.CORPORATE_EXPENSE) {
       const isTeamLeader = card.teamLeaderId === userId;

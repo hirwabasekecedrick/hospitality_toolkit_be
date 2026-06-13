@@ -3,6 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { CardsService } from "../cards/cards.service";
 import { ServiceProvidersService } from "../service-providers/service-providers.service";
+import { PaymentGatewaysService } from "../payment-gateways/payment-gateways.service";
 import { AuditAction, TransactionStatus, RedeemStatus } from "@prisma/client";
 
 @Injectable()
@@ -12,6 +13,7 @@ export class PaymentsService {
     private cardsService: CardsService,
     private serviceProvidersService: ServiceProvidersService,
     private auditService: AuditService,
+    private paymentGatewaysService: PaymentGatewaysService,
   ) {}
 
   async initiate(hotelCode: string) {
@@ -35,7 +37,7 @@ export class PaymentsService {
 
     if (card.budgetId) {
       const budget = await this.prisma.budget.findUnique({ where: { id: card.budgetId } });
-      if (budget && budget.spent + dto.amount > budget.ceiling) {
+      if (budget && budget.spent.plus(dto.amount).greaterThan(budget.ceiling)) {
         throw new ForbiddenException("Payment would exceed the linked budget ceiling");
       }
     }
@@ -64,95 +66,18 @@ export class PaymentsService {
       },
     });
 
-    // Update card balances: increment spent and if the card uses `amount` as remaining balance, decrement it.
-    const cardUpdateData: any = { spent: { increment: dto.amount } };
-    if (typeof card.amount !== "undefined" && card.amount !== null) {
-      cardUpdateData.amount = { decrement: dto.amount };
-    }
-
-    await this.prisma.card.update({
-      where: { id: card.id },
-      data: cardUpdateData,
-    });
-
-    // Update transaction status to CONFIRMED after successful payment
-    await this.prisma.transaction.update({
-      where: { id: transaction.id },
-      data: { status: TransactionStatus.CONFIRMED },
-    });
-
-    if (card.budgetId) {
-      await this.prisma.budget.update({
-        where: { id: card.budgetId },
-        data: { spent: { increment: dto.amount } },
-      });
-      await this.prisma.budgetUsage.create({
-        data: {
-          description: `Payment to ${provider.name}`,
-          amount: dto.amount,
-          budgetId: card.budgetId,
-        },
-      });
-    }
-
     await this.auditService.log({
       action: AuditAction.PAYMENT,
       entity: "Transaction",
       entityId: transaction.id,
-      description: `Payment of ${dto.amount} to ${provider.name} via card ${card.last4}`,
+      description: `Payment of ${dto.amount} to ${provider.name} via card ${card.last4} initiated`,
       userId,
       tenantId,
       ipAddress,
     });
 
-    await this.prisma.notification.create({
-      data: {
-        title: "Payment approved",
-        subtitle: `Payment to ${provider.name}`,
-        message: `Your payment of RWF ${dto.amount.toLocaleString()} to ${provider.name} has been approved and settled.`,
-        type: "Payment",
-        actionLabel: "View transaction",
-        actionUrl: `/corporate_employee/payments/${transaction.id}`,
-        transactionId: transaction.id,
-        userId,
-      },
-    });
-
-    const corporateAdmins = await this.prisma.user.findMany({
-      where: { tenantId, role: "CORPORATE_ADMIN" },
-    });
-    for (const admin of corporateAdmins) {
-      await this.prisma.notification.create({
-        data: {
-          title: "New payment by employee",
-          subtitle: `${user?.firstName ?? "Employee"} ${user?.lastName ?? ""} — ${provider.name}`,
-          message: `${user?.firstName ?? "An employee"} made a payment of RWF ${dto.amount.toLocaleString()} to ${provider.name} using card ${card.last4}.`,
-          type: "Payment",
-          actionLabel: "View transaction",
-          actionUrl: `/corporate_admin/payments/${transaction.id}`,
-          transactionId: transaction.id,
-          userId: admin.id,
-        },
-      });
-    }
-
-    const hotelOperators = await this.prisma.user.findMany({
-      where: { serviceProviderId: provider.id, role: "HOTEL_OPERATOR" },
-    });
-    for (const operator of hotelOperators) {
-      await this.prisma.notification.create({
-        data: {
-          title: "Payment received",
-          subtitle: `${user?.firstName ?? "Guest"} ${user?.lastName ?? ""} — ${transaction.reference}`,
-          message: `A payment of RWF ${dto.amount.toLocaleString()} from ${user?.firstName ?? "a guest"} has been received at ${provider.name}. Reference: ${transaction.reference}.`,
-          type: "Payment",
-          actionLabel: "View transaction",
-          actionUrl: `/hotel_operator/payments/${transaction.id}`,
-          transactionId: transaction.id,
-          userId: operator.id,
-        },
-      });
-    }
+    // Delegate actual settlement to the gateway service which will callback via webhook
+    await this.paymentGatewaysService.processPayment(transaction.id, Number(dto.amount), reference);
 
     return { transaction, provider };
   }
@@ -203,14 +128,14 @@ export class PaymentsService {
       throw new BadRequestException("Some transactions are not valid, already settled, or do not belong to your hotel");
     }
 
-    const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
+    const totalAmount = transactions.reduce((sum, t) => sum + t.amount.toNumber(), 0);
 
     const redeem = await this.prisma.redeem.create({
       data: {
         title: `Batch redeem — ${transactions.length} transaction(s)`,
         schedule: "Manual",
         status: RedeemStatus.COMPLETED,
-        description: `Redeemed ${transactions.length} transaction(s) totaling RWF ${totalAmount.toLocaleString()}`,
+        description: `Redeemed ${transactions.length} transaction(s) totaling RWF ${Number(totalAmount).toLocaleString()}`,
         requestedBy: userId,
         hotelOperatorId: userId,
         tenantId,
@@ -236,7 +161,7 @@ export class PaymentsService {
       action: AuditAction.PAYMENT,
       entity: "Redeem",
       entityId: redeem.id,
-      description: `Batch redeem of ${transactions.length} transactions totaling RWF ${totalAmount.toLocaleString()}`,
+      description: `Batch redeem of ${transactions.length} transactions totaling RWF ${Number(totalAmount).toLocaleString()}`,
       userId,
       tenantId,
     });
@@ -247,7 +172,7 @@ export class PaymentsService {
           data: {
             title: "Payment settled",
             subtitle: `Transaction ${txn.reference} has been settled`,
-            message: `Your payment of RWF ${txn.amount.toLocaleString()} has been settled by the hotel.`,
+            message: `Your payment of RWF ${Number(txn.amount).toLocaleString()} has been settled by the hotel.`,
             type: "Payment",
             userId: txn.userId,
             transactionId: txn.id,

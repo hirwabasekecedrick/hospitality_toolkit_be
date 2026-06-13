@@ -26,7 +26,8 @@ async function bootstrap() {
   app.use(helmet());
 
   app.enableCors({
-    origin: true,
+    // origin: ['https://hcardfe.vercel.app/',''], // For allowing specific origins.
+    origin: true,//For allowing all origins.
     credentials: true,
   });
 

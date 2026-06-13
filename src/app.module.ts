@@ -13,9 +13,13 @@ import { NotificationsModule } from "./notifications/notifications.module";
 import { AuditModule } from "./audit/audit.module";
 import { ReportsModule } from "./reports/reports.module";
 import { TokenBlacklistModule } from "./token-blacklist/token-blacklist.module";
+import { PaymentGatewaysModule } from "./payment-gateways/payment-gateways.module";
+import { ReconciliationModule } from "./reconciliation/reconciliation.module";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { ResponseInterceptor } from "./common/interceptors/response.interceptor";
+import { IdempotencyInterceptor } from "./common/interceptors/idempotency.interceptor";
 import { JwtAuthGuard } from "./auth/guards/jwt-auth.guard";
 import { RolesGuard } from "./auth/guards/roles.guard";
 
@@ -39,6 +43,9 @@ import { RolesGuard } from "./auth/guards/roles.guard";
     AuditModule,
     ReportsModule,
     TokenBlacklistModule,
+    PaymentGatewaysModule,
+    ReconciliationModule,
+    ScheduleModule.forRoot(),
   ],
   providers: [
     {
@@ -56,6 +63,10 @@ import { RolesGuard } from "./auth/guards/roles.guard";
     {
       provide: APP_INTERCEPTOR,
       useClass: ResponseInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: IdempotencyInterceptor,
     },
   ],
 })

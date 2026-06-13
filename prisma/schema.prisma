@@ -78,29 +78,29 @@ model Tenant {
 }
 
 model User {
-  id             String   @id @default(uuid())
-  email          String   @unique
-  passwordHash   String
-  firstName      String
-  lastName       String
-  phone          String?
-  role           UserRole
-  isActive       Boolean  @default(true)
-  tenantId       String?
-  tenant         Tenant?  @relation(fields: [tenantId], references: [id])
-  department     String?
-  cardPassword   String?
+  id                String           @id @default(uuid())
+  email             String           @unique
+  passwordHash      String
+  firstName         String
+  lastName          String
+  phone             String?
+  role              UserRole
+  isActive          Boolean          @default(true)
+  tenantId          String?
+  tenant            Tenant?          @relation(fields: [tenantId], references: [id])
+  department        String?
+  cardPassword      String?
   serviceProviderId String?
   serviceProvider   ServiceProvider? @relation(fields: [serviceProviderId], references: [id])
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
-  assignedCards  CardEmployee[]
-  ledCards       Card[]          @relation("CardTeamLeader")
-  transactions   Transaction[]
-  disputes       Dispute[]
-  notifications  Notification[]
-  auditLogs      AuditLog[]
+  assignedCards CardEmployee[]
+  ledCards      Card[]         @relation("CardTeamLeader")
+  transactions  Transaction[]
+  disputes      Dispute[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
 }
 
 model ServiceProvider {
@@ -126,31 +126,32 @@ model ServiceProvider {
 }
 
 model Card {
-  id            String          @id @default(uuid())
-  type          CardType
-  status        CardStatus      @default(ACTIVE)
-  cardPassword  String
-  cardNumber    String          @unique
-  last4         String
-  limit         Float?
-  amount        Float?
-  spent         Float           @default(0)
-  validityType  CardValidityType
-  validFrom     DateTime?
-  validUntil    DateTime?
-  purpose       String?
-  distributed   Boolean         @default(false)
-  teamLeaderId  String?
-  teamLeader    User?           @relation("CardTeamLeader", fields: [teamLeaderId], references: [id])
-  tenantId      String?
-  createdById   String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id           String           @id @default(uuid())
+  type         CardType
+  status       CardStatus       @default(ACTIVE)
+  cardPassword String
+  cardNumber   String           @unique
+  last4        String
+  limit        Decimal?
+  amount       Decimal?
+  spent        Decimal          @default(0)
+  currency     String           @default("RWF")
+  validityType CardValidityType
+  validFrom    DateTime?
+  validUntil   DateTime?
+  purpose      String?
+  distributed  Boolean          @default(false)
+  teamLeaderId String?
+  teamLeader   User?            @relation("CardTeamLeader", fields: [teamLeaderId], references: [id])
+  tenantId     String?
+  createdById  String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
-  employees     CardEmployee[]
-  transactions  Transaction[]
-  budgetId      String?
-  budget        Budget?         @relation(fields: [budgetId], references: [id])
+  employees    CardEmployee[]
+  transactions Transaction[]
+  budgetId     String?
+  budget       Budget?        @relation(fields: [budgetId], references: [id])
 }
 
 model CardEmployee {
@@ -167,9 +168,10 @@ model Budget {
   name           String
   allocationType String
   purpose        String?
-  allocated      Float
-  spent          Float    @default(0)
-  ceiling        Float
+  allocated      Decimal
+  spent          Decimal  @default(0)
+  ceiling        Decimal
+  currency       String   @default("RWF")
   status         String   @default("Active")
   tenantId       String?
   createdById    String?
@@ -181,18 +183,19 @@ model Budget {
 }
 
 model BudgetUsage {
-  id          String @id @default(uuid())
+  id          String   @id @default(uuid())
   description String
-  amount      Float
+  amount      Decimal
   date        DateTime @default(now())
   budgetId    String
-  budget      Budget @relation(fields: [budgetId], references: [id])
+  budget      Budget   @relation(fields: [budgetId], references: [id])
 }
 
 model Transaction {
   id                String            @id @default(uuid())
   title             String
-  amount            Float
+  amount            Decimal
+  currency          String            @default("RWF")
   status            TransactionStatus @default(PENDING)
   reference         String            @unique
   paymentMethod     String?
@@ -214,7 +217,8 @@ model Dispute {
   id            String        @id @default(uuid())
   title         String
   description   String?
-  amount        Float
+  amount        Decimal
+  currency      String        @default("RWF")
   status        DisputeStatus @default(OPEN)
   userId        String
   user          User          @relation(fields: [userId], references: [id])
@@ -227,26 +231,27 @@ model Dispute {
 }
 
 model Redeem {
-  id                 String       @id @default(uuid())
-  title              String
-  schedule           String
-  status             RedeemStatus @default(PENDING)
-  description        String?
-  requestedBy        String
-  paymentMethod      String?
-  externalReference  String?
-  nextRun            DateTime?
-  tenantId           String?
-  hotelOperatorId    String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  id                String       @id @default(uuid())
+  title             String
+  schedule          String
+  status            RedeemStatus @default(PENDING)
+  currency          String       @default("RWF")
+  description       String?
+  requestedBy       String
+  paymentMethod     String?
+  externalReference String?
+  nextRun           DateTime?
+  tenantId          String?
+  hotelOperatorId   String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   redeemTransactions RedeemTransaction[]
 }
 
 model RedeemTransaction {
   id        String  @id @default(uuid())
-  amount    Float
+  amount    Decimal
   guest     String
   property  String
   reference String
@@ -285,4 +290,15 @@ model AuditLog {
   tenantId    String?
   ipAddress   String?
   createdAt   DateTime    @default(now())
+}
+
+model IdempotencyKey {
+  key            String   @id
+  userId         String?
+  requestPath    String
+  requestMethod  String
+  responseStatus Int
+  responseBody   Json
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
 }

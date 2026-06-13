@@ -45,7 +45,7 @@ export class DisputesService {
       data: {
         title: "Dispute opened",
         subtitle: dto.title,
-        message: `A dispute for RWF ${dto.amount.toLocaleString()} has been opened.`,
+        message: `A dispute for RWF ${Number(dto.amount).toLocaleString()} has been opened.`,
         type: "Dispute",
         actionLabel: "View dispute",
         transactionId: dto.transactionId,
@@ -91,14 +91,14 @@ export class DisputesService {
       tenantId: dispute.tenantId ?? undefined,
     });
 
-    if (status === "APPROVED" && dispute.amount > 0) {
+    if (status === "APPROVED" && Number(dispute.amount) > 0) {
       await this.addFundsOrCreateCard(dispute, resolvedById);
     }
 
     return resolved;
   }
 
-  private async addFundsOrCreateCard(dispute: { userId: string; amount: number; tenantId?: string | null; title: string }, resolvedById: string) {
+  private async addFundsOrCreateCard(dispute: { userId: string; amount: any; tenantId?: string | null; title: string }, resolvedById: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: dispute.userId },
       select: { id: true, firstName: true, lastName: true, email: true, tenantId: true },
@@ -135,7 +135,7 @@ export class DisputesService {
         data: {
           title: "Dispute approved — funds added",
           subtitle: dispute.title,
-          message: `Your dispute for RWF ${dispute.amount.toLocaleString()} has been approved and added to your card ****${activeCard.last4}.`,
+          message: `Your dispute for RWF ${Number(dispute.amount).toLocaleString()} has been approved and added to your card ****${activeCard.last4}.`,
           type: "Dispute",
           userId: dispute.userId,
         },
@@ -169,7 +169,7 @@ export class DisputesService {
         data: {
           title: "Dispute approved — new card issued",
           subtitle: dispute.title,
-          message: `Your dispute for RWF ${dispute.amount.toLocaleString()} has been approved. A new card ****${last4} has been issued to you with that amount.`,
+          message: `Your dispute for RWF ${Number(dispute.amount).toLocaleString()} has been approved. A new card ****${last4} has been issued to you with that amount.`,
           type: "Dispute",
           userId: dispute.userId,
         },
