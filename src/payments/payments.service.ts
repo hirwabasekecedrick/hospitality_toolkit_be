@@ -53,7 +53,7 @@ export class PaymentsService {
       data: {
         title: `Payment to ${provider.name}`,
         amount: dto.amount,
-        status: TransactionStatus.PENDING,
+        status: TransactionStatus.CONFIRMED,
         reference,
         paymentMethod: "Corporate card",
         details: `Payment via ${card.type} card ${card.last4}`,
@@ -76,8 +76,44 @@ export class PaymentsService {
       ipAddress,
     });
 
-    // Delegate actual settlement to the gateway service which will callback via webhook
-    await this.paymentGatewaysService.processPayment(transaction.id, Number(dto.amount), reference);
+    // Deduct amounts internally upon confirmation
+    const cardUpdateData: any = { spent: { increment: dto.amount } };
+    if (card.amount !== null && card.amount !== undefined) {
+      cardUpdateData.amount = { decrement: dto.amount };
+    }
+
+    await this.prisma.card.update({
+      where: { id: card.id },
+      data: cardUpdateData,
+    });
+
+    if (card.budgetId) {
+      await this.prisma.budget.update({
+        where: { id: card.budgetId },
+        data: { spent: { increment: dto.amount } },
+      });
+      await this.prisma.budgetUsage.create({
+        data: {
+          description: `Payment to ${provider.name}`,
+          amount: dto.amount,
+          budgetId: card.budgetId,
+        },
+      });
+    }
+
+    // Notifications
+    await this.prisma.notification.create({
+      data: {
+        title: "Payment confirmed",
+        subtitle: `Payment to ${provider.name}`,
+        message: `Your payment of RWF ${Number(dto.amount).toLocaleString()} to ${provider.name} has been confirmed.`,
+        type: "Payment",
+        actionLabel: "View transaction",
+        actionUrl: `/corporate_employee/payments/${transaction.id}`,
+        transactionId: transaction.id,
+        userId: userId,
+      },
+    });
 
     return { transaction, provider };
   }
@@ -86,8 +122,6 @@ export class PaymentsService {
     const where: any = { serviceProviderId };
     if (status) {
       where.status = status;
-    } else {
-      where.status = TransactionStatus.PENDING;
     }
     const txns = await this.prisma.transaction.findMany({
       where,
@@ -121,11 +155,11 @@ export class PaymentsService {
     }
 
     const transactions = await this.prisma.transaction.findMany({
-      where: { id: { in: dto.transactionIds }, serviceProviderId, status: TransactionStatus.PENDING },
+      where: { id: { in: dto.transactionIds }, serviceProviderId, status: TransactionStatus.CONFIRMED },
     });
 
     if (transactions.length !== dto.transactionIds.length) {
-      throw new BadRequestException("Some transactions are not valid, already settled, or do not belong to your hotel");
+      throw new BadRequestException("Some transactions are not confirmed, already settled, or do not belong to your hotel");
     }
 
     const totalAmount = transactions.reduce((sum, t) => sum + t.amount.toNumber(), 0);

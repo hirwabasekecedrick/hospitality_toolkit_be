@@ -196,7 +196,7 @@ model Transaction {
   title             String
   amount            Decimal
   currency          String            @default("RWF")
-  status            TransactionStatus @default(PENDING)
+  status            TransactionStatus @default(CONFIRMED)
   reference         String            @unique
   paymentMethod     String?
   details           String?
