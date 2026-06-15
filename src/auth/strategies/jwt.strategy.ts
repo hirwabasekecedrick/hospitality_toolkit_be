@@ -51,6 +51,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         lastName: true,
         role: true,
         isActive: true,
+        isVerified: true,
+        accountStatus: true,
         tenantId: true,
         department: true,
         serviceProviderId: true,
@@ -59,6 +61,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException("User not found or inactive");
+    }
+
+    if (!user.isVerified || user.accountStatus === "PENDING_VERIFICATION") {
+      throw new UnauthorizedException("Email verification required");
+    }
+
+    if (user.accountStatus === "BLOCKED" || user.accountStatus === "SUSPENDED") {
+      throw new UnauthorizedException("Account is not active");
     }
 
     if (payload.jti) {

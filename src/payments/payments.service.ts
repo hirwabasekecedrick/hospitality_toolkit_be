@@ -4,6 +4,7 @@ import { AuditService } from "../audit/audit.service";
 import { CardsService } from "../cards/cards.service";
 import { ServiceProvidersService } from "../service-providers/service-providers.service";
 import { AuditAction, TransactionStatus, RedeemStatus } from "@prisma/client";
+import { generateTransactionReference } from "../common/utils/transaction.util";
 
 @Injectable()
 export class PaymentsService {
@@ -33,28 +34,47 @@ export class PaymentsService {
       userId,
     );
 
-    const reference = `PAY-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    if (dto.amount <= 0) {
+      throw new BadRequestException("Payment amount must be positive");
+    }
 
-    const transaction = await this.prisma.transaction.create({
-      data: {
-        title: `Payment to ${provider.name}`,
-        amount: dto.amount,
-        status: TransactionStatus.PENDING,
-        reference,
-        paymentMethod: "Corporate card",
-        details: `Payment via ${card.type} card ${card.last4}`,
-        clientName: `${card.teamLeader?.firstName || ""} ${card.teamLeader?.lastName || ""}`.trim() || "Employee",
-        clientOrg: tenantId || "",
-        cardId: card.id,
-        userId,
-        serviceProviderId: provider.id,
-        tenantId,
-      },
-    });
+    const reference = generateTransactionReference();
 
-    await this.prisma.card.update({
-      where: { id: card.id },
-      data: { spent: { increment: dto.amount } },
+    const transaction = await this.prisma.$transaction(async (tx) => {
+      const currentCard = await tx.card.findUnique({ where: { id: card.id } });
+      if (!currentCard) throw new NotFoundException("Card not found");
+
+      const available = (currentCard.amount ?? 0) - currentCard.spent;
+      if (currentCard.amount != null && dto.amount > available) {
+        throw new ForbiddenException("Insufficient card balance");
+      }
+      if (currentCard.limit && currentCard.spent + dto.amount > currentCard.limit) {
+        throw new ForbiddenException("Card limit exceeded");
+      }
+
+      const txn = await tx.transaction.create({
+        data: {
+          title: `Payment to ${provider.name}`,
+          amount: dto.amount,
+          status: TransactionStatus.PENDING,
+          reference,
+          paymentMethod: "Corporate card",
+          details: `Payment via ${card.type} card ${card.last4}`,
+          clientName: `${card.teamLeader?.firstName || ""} ${card.teamLeader?.lastName || ""}`.trim() || "Employee",
+          clientOrg: tenantId || "",
+          cardId: card.id,
+          userId,
+          serviceProviderId: provider.id,
+          tenantId,
+        },
+      });
+
+      await tx.card.update({
+        where: { id: card.id },
+        data: { spent: { increment: dto.amount } },
+      });
+
+      return txn;
     });
 
     await this.auditService.log({

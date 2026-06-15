@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, ForbiddenException, UnauthorizedException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException, UnauthorizedException, BadRequestException } from "@nestjs/common";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { CreateCardDto } from "./dto/create-card.dto";
 import { UpdateCardDto } from "./dto/update-card.dto";
 import { AuditAction, CardType, UserRole } from "@prisma/client";
+import { sanitizeCard, sanitizeCards } from "../common/utils/card-sanitize.util";
 
 @Injectable()
 export class CardsService {
@@ -89,11 +90,44 @@ export class CardsService {
       tenantId,
     });
 
-    return this.findOne(card.id, tenantId, "CORPORATE_ADMIN");
+    return sanitizeCard(await this.findOne(card.id, tenantId, "CORPORATE_ADMIN") as any);
+  }
+
+  async deposit(cardId: string, amount: number, userId: string, tenantId: string, ipAddress?: string) {
+    if (amount <= 0) {
+      throw new BadRequestException("Deposit amount must be positive");
+    }
+
+    const card = await this.prisma.card.findUnique({ where: { id: cardId } });
+    if (!card) throw new NotFoundException("Card not found");
+    if (card.tenantId !== tenantId) throw new UnauthorizedException("Access denied");
+    if (card.status !== "ACTIVE") throw new ForbiddenException("Card is not active");
+
+    const updated = await this.prisma.card.update({
+      where: { id: cardId },
+      data: { amount: { increment: amount } },
+    });
+
+    if ((updated.amount ?? 0) < 0 || updated.spent < 0) {
+      throw new BadRequestException("Invalid balance state");
+    }
+
+    await this.auditService.log({
+      action: AuditAction.DEPOSIT,
+      entity: "Card",
+      entityId: cardId,
+      description: `Deposited ${amount} to card ${card.last4}`,
+      userId,
+      tenantId,
+      ipAddress,
+      newValue: { amount, balance: updated.amount },
+    });
+
+    return sanitizeCard(updated as any);
   }
 
   async findAll(tenantId: string) {
-    return this.prisma.card.findMany({
+    const cards = await this.prisma.card.findMany({
       where: { tenantId },
       include: {
         employees: { include: { employee: { select: { id: true, firstName: true, lastName: true, email: true } } } },
@@ -101,6 +135,7 @@ export class CardsService {
       },
       orderBy: { createdAt: "desc" },
     });
+    return sanitizeCards(cards as any[]);
   }
 
   async findOne(id: string, requestingTenantId?: string, requestingRole?: string) {
@@ -117,11 +152,11 @@ export class CardsService {
     if (requestingRole !== "SUPER_ADMIN" && card.tenantId !== requestingTenantId) {
       throw new UnauthorizedException("You do not have access to this card");
     }
-    return card;
+    return sanitizeCard(card as any);
   }
 
   async findMyCards(userId: string, tenantId: string) {
-    return this.prisma.card.findMany({
+    const cards = await this.prisma.card.findMany({
       where: {
         tenantId,
         OR: [
@@ -135,6 +170,7 @@ export class CardsService {
       },
       orderBy: { createdAt: "desc" },
     });
+    return sanitizeCards(cards as any[]);
   }
 
   async update(id: string, dto: UpdateCardDto) {
@@ -153,7 +189,7 @@ export class CardsService {
       },
     });
 
-    return updated;
+    return sanitizeCard(updated as any);
   }
 
   async remove(id: string) {
@@ -183,6 +219,13 @@ export class CardsService {
     // if (card.validUntil && new Date(card.validUntil) < new Date()) throw new ForbiddenException("Card has expired");
     // if (card.validFrom && new Date(card.validFrom) > new Date()) throw new ForbiddenException("Card is not yet valid");
     if (card.limit && card.spent + amount > card.limit) throw new ForbiddenException("Card limit exceeded");
+
+    const available = (card.amount ?? 0) - card.spent;
+    if (card.amount != null && amount > available) {
+      throw new ForbiddenException("Insufficient card balance");
+    }
+
+    if (amount <= 0) throw new BadRequestException("Payment amount must be positive");
 
     if (card.type === CardType.CORPORATE_EXPENSE) {
       // Allow team leader, assigned employees, or any user in the same tenant

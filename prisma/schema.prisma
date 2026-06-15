@@ -60,6 +60,15 @@ enum AuditAction {
   APPROVE
   REJECT
   DISPUTE
+  DEPOSIT
+  EXCHANGE
+}
+
+enum AccountStatus {
+  ACTIVE
+  PENDING_VERIFICATION
+  SUSPENDED
+  BLOCKED
 }
 
 model Tenant {
@@ -77,29 +86,37 @@ model Tenant {
 }
 
 model User {
-  id             String   @id @default(uuid())
-  email          String   @unique
-  passwordHash   String
-  firstName      String
-  lastName       String
-  phone          String?
-  role           UserRole
-  isActive       Boolean  @default(true)
-  tenantId       String?
-  tenant         Tenant?  @relation(fields: [tenantId], references: [id])
-  department     String?
-  cardPassword   String?
+  id                String        @id @default(uuid())
+  email             String        @unique
+  passwordHash      String
+  firstName         String
+  lastName          String
+  phone             String?       @unique
+  countryCode       String?
+  role              UserRole
+  isActive          Boolean       @default(true)
+  isVerified        Boolean       @default(true)
+  accountStatus     AccountStatus @default(ACTIVE)
+  failedLoginAttempts Int         @default(0)
+  lockedUntil       DateTime?
+  tenantId          String?
+  tenant            Tenant?       @relation(fields: [tenantId], references: [id])
+  department        String?
+  cardPassword      String?
   serviceProviderId String?
   serviceProvider   ServiceProvider? @relation(fields: [serviceProviderId], references: [id])
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
-  assignedCards  CardEmployee[]
-  ledCards       Card[]          @relation("CardTeamLeader")
-  transactions   Transaction[]
-  disputes       Dispute[]
-  notifications  Notification[]
-  auditLogs      AuditLog[]
+  assignedCards            CardEmployee[]
+  ledCards                 Card[]                   @relation("CardTeamLeader")
+  transactions             Transaction[]
+  disputes                 Dispute[]
+  notifications            Notification[]
+  auditLogs                AuditLog[]
+  refreshTokens            RefreshToken[]
+  loginSessions            LoginSession[]
+  emailVerificationTokens  EmailVerificationToken[]
 }
 
 model ServiceProvider {
@@ -284,4 +301,62 @@ model AuditLog {
   tenantId    String?
   ipAddress   String?
   createdAt   DateTime    @default(now())
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([createdAt])
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  token      String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceName String?
+  ipAddress  String?
+  userAgent  String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model LoginSession {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceName String?
+  ipAddress  String?
+  userAgent  String?
+  loginAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([loginAt])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model ExchangeLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  usdAmount Float
+  rate      Float
+  rwfAmount Float
+  reference String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
 }

@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Put, Delete, Body, Param } from "@nestjs/common";
+import { Controller, Get, Post, Put, Delete, Body, Param, Req } from "@nestjs/common";
+import type { Request } from "express";
 import { CardsService } from "./cards.service";
 import { CreateCardDto } from "./dto/create-card.dto";
 import { UpdateCardDto } from "./dto/update-card.dto";
+import { DepositCardDto } from "./dto/deposit-card.dto";
 import { Roles } from "../auth/decorators/roles.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { UserRole } from "@prisma/client";
@@ -38,6 +40,17 @@ export class CardsController {
   @Roles(UserRole.CORPORATE_ADMIN, UserRole.SUPER_ADMIN)
   async update(@Param("id") id: string, @Body() dto: UpdateCardDto) {
     return this.cardsService.update(id, dto);
+  }
+
+  @Post(":id/deposit")
+  @Roles(UserRole.CORPORATE_ADMIN, UserRole.SUPER_ADMIN)
+  async deposit(
+    @Param("id") id: string,
+    @Body() dto: DepositCardDto,
+    @CurrentUser() user: any,
+    @Req() req: Request,
+  ) {
+    return this.cardsService.deposit(id, dto.amount, user.id, user.tenantId, req.ip);
   }
 
   @Delete(":id")

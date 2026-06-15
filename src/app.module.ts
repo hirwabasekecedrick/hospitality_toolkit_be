@@ -12,6 +12,7 @@ import { RedeemsModule } from "./redeems/redeems.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { AuditModule } from "./audit/audit.module";
 import { RedisModule } from "./redis/redis.module";
+import { WalletModule } from "./wallet/wallet.module";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { ResponseInterceptor } from "./common/interceptors/response.interceptor";
@@ -37,6 +38,7 @@ import { RolesGuard } from "./auth/guards/roles.guard";
     NotificationsModule,
     AuditModule,
     RedisModule,
+    WalletModule,
   ],
   providers: [
     {
